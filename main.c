@@ -144,6 +144,9 @@ int main(void)
 		}
 	}
 
+	double throughput = total_bytes_sent / current_time * 1000;
+	double avg_network_delay = total_network_delay / throughput;
+
 	/* Print results */
 	printf("Discrete-event simulation of WLAN:\n");
 	printf("/************************************************/\n");
@@ -162,6 +165,9 @@ int main(void)
 	printf("Simulation time: %lf ms\n", current_time);
 	printf("Total network delay: %lf ms\n", total_network_delay);
 	printf("Total bytes sent: %d\n", total_bytes_sent);
+	printf("Throughput: %lf kBps\n", throughput / 1000);
+	printf("Average network delay: %lf\n", avg_network_delay);
+
 
 	/* Clean up */
 	gel_destroy(gel);
@@ -189,8 +195,8 @@ void process_arrival_event(
 	double *service_time = malloc(sizeof(double));
 	int data_frame_length = generate_data_frame_length();
 	*service_time =
-		((double)data_frame_length * 8) / ((double)WLAN_CAP)
-		+ ((double)ACK_SIZE * 8) / ((double)WLAN_CAP)
+		(((double)data_frame_length * 8) / ((double)WLAN_CAP)
+		+ ((double)ACK_SIZE * 8) / ((double)WLAN_CAP)) * 1000
 		+ SIFS;
 
 	/* Update current time */
@@ -225,7 +231,7 @@ void process_arrival_event(
 			/* Create new event for sensing backoff */
 			new =
 				gel_create_event(
-					*current_time + DT,
+					event.time + DT,
 					round(drand48() * MAX_BACKOFF),
 					0,
 					event.src_host,
@@ -237,7 +243,7 @@ void process_arrival_event(
 			/* Create new event for sensing channel */
 			new =
 				gel_create_event(
-					*current_time + DT,
+					event.time + DT,
 					1,
 					0,
 					event.src_host,
@@ -273,8 +279,30 @@ void process_departure(
 
 	double *service_time;
 	queue_dequeue(network->hosts[event.src_host], (void **)&service_time);
-printf("%lf\n", (*service_time - SIFS) * WLAN_CAP / 8 - ACK_SIZE);
-	*total_bytes_sent += (*service_time - SIFS) * WLAN_CAP / 8 - ACK_SIZE;
+printf("%d\n", (int)((*service_time - SIFS) * WLAN_CAP / 8000 - ACK_SIZE));
+printf("current time: %lf\n", *current_time);
+	*total_bytes_sent +=
+		(*service_time - SIFS) * WLAN_CAP / 8000 - ACK_SIZE;
+
+	/* If more pkts in queue waiting */
+	if (queue_length(network->hosts[event.src_host]) > 0) {
+		/* Pick a random host to send to */
+		int dest_host = generate_dest_host(event.src_host);
+		/* Update total network delay */
+		*total_network_delay += DT;
+printf("total delay: %lf\n", *total_network_delay);
+		/* Create new event for sensing backoff */
+		event_t *new =
+			gel_create_event(
+				*current_time + DT,
+				round(drand48() * MAX_BACKOFF),
+				0,
+				event.src_host,
+				dest_host,
+				SENSE
+			);
+		gel_insert(gel, new);
+	}
 }
 
 void process_sense(
@@ -333,6 +361,7 @@ void process_sense(
 				);
 			gel_insert(gel, new);
 			/* Add transmission time to total delay */
+			printf("service time: %lf\n", *service_time);
 			*total_network_delay += *service_time;
 		} else { /* Else backoff counter is greater than 0 */
 			/* Create sense event with new backoff counter value */
