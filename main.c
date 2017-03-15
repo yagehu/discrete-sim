@@ -15,7 +15,7 @@
 /* Number of hosts */
 #define HOST_COUNT		2
 /* Maximum backoff value */
-#define MAX_BACKOFF		5
+#define MAX_BACKOFF		100
 /* Acknowledgement frame size in bytes */
 #define ACK_SIZE		64
 /* Wireless channel capacity in bps */
@@ -27,7 +27,7 @@
 /* Time between each channel sense in ms */
 #define DT			0.01
 /* Number of events to simulate */
-#define MAX_EVENT		1
+#define MAX_EVENT		1000000
 
 typedef struct network_t {
 	queue_t **hosts;
@@ -40,12 +40,14 @@ void process_arrival_event(
 	event_t event,
 	double *current_time,
 	double *total_network_delay);
-void process_departure_event(
+void process_departure(
 	gel_t *gel,
-	queue_t *q,
-	double event_time,
-	double *current_time);
-void process_sense_difs(
+	network_t *network,
+	event_t event,
+	double *current_time,
+	double *total_network_delay,
+	int *total_bytes_sent);
+void process_sense(
 	gel_t *gel,
 	network_t *network,
 	event_t event,
@@ -73,6 +75,7 @@ void print(gel_t *gel, int count, double current_time)
 
 int main(void)
 {
+	int total_bytes_sent = 0;
 	double total_network_delay = 0.0;
 	double current_time = 0.0;
 	/* Initialize GEL */
@@ -107,30 +110,58 @@ int main(void)
 	}
 
 	for (int i = 0; i < MAX_EVENT; i++) {
-		event_t current;
-		gel_get(gel, &current);
+		event_t *current = malloc(sizeof(event_t));
+		gel_get(gel, current);
 
-		switch (current.type) {
+		switch (current->type) {
 		case ARRIVAL:
 			process_arrival_event(
 				gel,
 				network,
-				current,
+				*current,
 				&current_time,
 				&total_network_delay
 			);
 			break;
-		case SENSE_DIFS:
-			process_sense_difs(
+		case SENSE:
+			process_sense(
 				gel,
 				network,
-				current,
+				*current,
 				&current_time,
 				&total_network_delay
 			);
 			break;
+		case DEPARTURE:
+			process_departure(
+				gel,
+				network,
+				*current,
+				&current_time,
+				&total_network_delay,
+				&total_bytes_sent
+			);
 		}
 	}
+
+	/* Print results */
+	printf("Discrete-event simulation of WLAN:\n");
+	printf("/************************************************/\n");
+	printf("/*                  Parameters                  */\n");
+	printf("/************************************************/\n");
+	printf("Number of hosts: %d\n", HOST_COUNT);
+	printf("Number of events simulated: %d\n", MAX_EVENT);
+	printf("Packet arrival rate: %lf\n", ARRIVAL_RATE);
+	printf("Data frame length rate: %lf\n", DATA_RATE);
+	printf("Backoff value: %d\n", MAX_BACKOFF);
+	printf("Short Inter-frame Space (SIFS): %lf ms\n", SIFS);
+	printf("Distributed Inter-frame Space (DIFS): %lf ms\n", DIFS);
+	printf("/************************************************/\n");
+	printf("/*                   Results                    */\n");
+	printf("/************************************************/\n");
+	printf("Simulation time: %lf ms\n", current_time);
+	printf("Total network delay: %lf ms\n", total_network_delay);
+	printf("Total bytes sent: %d\n", total_bytes_sent);
 
 	/* Clean up */
 	gel_destroy(gel);
@@ -157,7 +188,10 @@ void process_arrival_event(
 	/* Compute service time using randomly generated data frame length */
 	double *service_time = malloc(sizeof(double));
 	int data_frame_length = generate_data_frame_length();
-	*service_time = ((double)data_frame_length * 8) / ((double)WLAN_CAP);
+	*service_time =
+		((double)data_frame_length * 8) / ((double)WLAN_CAP)
+		+ ((double)ACK_SIZE * 8) / ((double)WLAN_CAP)
+		+ SIFS;
 
 	/* Update current time */
 	*current_time = event.time;
@@ -196,7 +230,7 @@ void process_arrival_event(
 					0,
 					event.src_host,
 					dest_host,
-					SENSE_DIFS
+					SENSE
 				);
 			gel_insert(gel, new);
 		} else { /* Else channel is idle, wait for DIFS */
@@ -204,11 +238,11 @@ void process_arrival_event(
 			new =
 				gel_create_event(
 					*current_time + DT,
-					-1,
+					1,
 					0,
 					event.src_host,
 					dest_host,
-					SENSE_DIFS
+					SENSE
 				);
 			gel_insert(gel, new);
 		}
@@ -224,7 +258,26 @@ void process_arrival_event(
 	}
 }
 
-void process_sense_difs(
+void process_departure(
+	gel_t *gel,
+	network_t *network,
+	event_t event,
+	double *current_time,
+	double *total_network_delay,
+	int *total_bytes_sent)
+{
+	/* Update current time */
+	*current_time = event.time;
+	/* Set channel to idle */
+	network->is_busy = false;
+
+	double *service_time;
+	queue_dequeue(network->hosts[event.src_host], (void **)&service_time);
+
+	*total_bytes_sent += (*service_time - SIFS) * WLAN_CAP / 8 - ACK_SIZE;
+}
+
+void process_sense(
 	gel_t *gel,
 	network_t *network,
 	event_t event,
@@ -239,11 +292,11 @@ void process_sense_difs(
 		int backoff;
 		double difs = event.difs + DT;
 
-		/* If channel idle for DIFS */
-		if (difs == DIFS)
+		/* If channel idle for 1 DIFS */
+		if (difs >= DIFS) {
 			/* Decrement backoff counter */
 			backoff = event.backoff - 1;
-		else { /* Else not DIFS yet, keep sensing */
+		} else { /* Else not DIFS yet, keep sensing */
 			event_t *new =
 				gel_create_event(
 					*current_time + DT,
@@ -262,7 +315,7 @@ void process_sense_difs(
 		if (backoff == 0) {
 			/* Get transmission time of the pkt */
 			double *service_time;
-			queue_dequeue(
+			queue_get(
 				network->hosts[event.src_host],
 				(void **)&service_time
 			);
@@ -290,7 +343,7 @@ void process_sense_difs(
 					0,
 					event.src_host,
 					event.dest_host,
-					SENSE_DIFS
+					SENSE
 				);
 			gel_insert(gel, new);
 			/* Update total delay */
@@ -305,7 +358,7 @@ void process_sense_difs(
 				0,
 				event.src_host,
 				event.dest_host,
-				SENSE_DIFS
+				SENSE
 			);
 		gel_insert(gel, new);
 		/* Update total delay */

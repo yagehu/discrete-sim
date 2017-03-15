@@ -74,6 +74,21 @@ int queue_dequeue(queue_t *queue, void **data)
 	return 0;
 }
 
+int queue_get(queue_t *queue, void **data)
+{
+	/* Check for NULL arguments */
+	if (!queue || !data)
+		return -1;
+
+	/* If queue is empty */
+	if (queue->front == NULL)
+		return -1;
+
+	*data = queue->front->data;
+
+	return 0;
+}
+
 int queue_destroy(queue_t *queue)
 {
 	/* Check for NULL argument */

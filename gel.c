@@ -87,6 +87,8 @@ int gel_get(gel_t *gel, event_t *event)
 		return -1;
 
 	event->time = gel->front->event->time;
+	event->backoff = gel->front->event->backoff;
+	event->difs = gel->front->event->difs;
 	event->src_host = gel->front->event->src_host;
 	event->dest_host = gel->front->event->dest_host;
 	event->type = gel->front->event->type;

@@ -6,7 +6,7 @@ typedef struct gel gel_t;
 typedef enum event_type {
 	ARRIVAL,
 	DEPARTURE,
-	SENSE_DIFS,
+	SENSE,
 	TRANSMIT
 } event_type_t;
 
