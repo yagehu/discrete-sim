@@ -57,22 +57,6 @@ double neg_exp_gen(double rate);
 int generate_data_frame_length(void);
 int generate_dest_host(int src_host);
 
-void print(gel_t *gel, int count, double current_time)
-{
-	for (int i = 0; i < count; i++) {
-		event_t *temp = malloc(sizeof(event_t));
-		gel_get(gel, temp);
-		printf(
-			"%lf %lf %d %d %d\n",
-			current_time,
-			temp->time,
-			temp->src_host,
-			temp->dest_host,
-			temp->type
-		);
-	}
-}
-
 int main(void)
 {
 	int total_bytes_sent = 0;
@@ -279,8 +263,6 @@ void process_departure(
 
 	double *service_time;
 	queue_dequeue(network->hosts[event.src_host], (void **)&service_time);
-printf("%d\n", (int)((*service_time - SIFS) * WLAN_CAP / 8000 - ACK_SIZE));
-printf("current time: %lf\n", *current_time);
 	*total_bytes_sent +=
 		(*service_time - SIFS) * WLAN_CAP / 8000 - ACK_SIZE;
 
@@ -290,7 +272,6 @@ printf("current time: %lf\n", *current_time);
 		int dest_host = generate_dest_host(event.src_host);
 		/* Update total network delay */
 		*total_network_delay += DT;
-printf("total delay: %lf\n", *total_network_delay);
 		/* Create new event for sensing backoff */
 		event_t *new =
 			gel_create_event(
@@ -361,7 +342,6 @@ void process_sense(
 				);
 			gel_insert(gel, new);
 			/* Add transmission time to total delay */
-			printf("service time: %lf\n", *service_time);
 			*total_network_delay += *service_time;
 		} else { /* Else backoff counter is greater than 0 */
 			/* Create sense event with new backoff counter value */
