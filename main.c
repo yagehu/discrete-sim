@@ -145,7 +145,7 @@ int main(void)
 	}
 
 	double throughput = total_bytes_sent / current_time * 1000;
-	double avg_network_delay = total_network_delay / throughput;
+	double avg_network_delay = total_network_delay / (throughput / 1000);
 
 	/* Print results */
 	printf("Discrete-event simulation of WLAN:\n");
@@ -166,7 +166,7 @@ int main(void)
 	printf("Total network delay: %lf ms\n", total_network_delay);
 	printf("Total bytes sent: %d\n", total_bytes_sent);
 	printf("Throughput: %lf kBps\n", throughput / 1000);
-	printf("Average network delay: %lf\n", avg_network_delay);
+	printf("Average network delay: %lf ms\n", avg_network_delay);
 
 
 	/* Clean up */
