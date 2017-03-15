@@ -21,6 +21,7 @@ gel_t *gel_create(void)
 	gel->front = NULL;
 	gel->rear = NULL;
 	gel->length = 0;
+	return gel;
 }
 
 int gel_insert(gel_t *gel, event_t *new_event)
