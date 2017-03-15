@@ -13,7 +13,7 @@
 /* Maximum data frame length in bytes */
 #define MAX_DATA_LENGTH		1544.0
 /* Number of hosts */
-#define HOST_COUNT		2
+#define HOST_COUNT		10
 /* Maximum backoff value */
 #define MAX_BACKOFF		100
 /* Acknowledgement frame size in bytes */
@@ -273,7 +273,7 @@ void process_departure(
 
 	double *service_time;
 	queue_dequeue(network->hosts[event.src_host], (void **)&service_time);
-
+printf("%lf\n", (*service_time - SIFS) * WLAN_CAP / 8 - ACK_SIZE);
 	*total_bytes_sent += (*service_time - SIFS) * WLAN_CAP / 8 - ACK_SIZE;
 }
 
