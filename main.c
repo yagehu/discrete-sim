@@ -34,7 +34,7 @@ typedef struct network_t {
 	bool is_busy;
 } network_t;
 
-void process_arrival_event(
+void process_arrival(
 	gel_t *gel,
 	network_t *network,
 	event_t event,
@@ -99,7 +99,7 @@ int main(void)
 
 		switch (current->type) {
 		case ARRIVAL:
-			process_arrival_event(
+			process_arrival(
 				gel,
 				network,
 				*current,
@@ -165,7 +165,7 @@ int main(void)
 	return 0;
 }
 
-void process_arrival_event(
+void process_arrival(
 	gel_t *gel,
 	network_t *network,
 	event_t event,
@@ -276,7 +276,7 @@ void process_departure(
 		event_t *new =
 			gel_create_event(
 				*current_time + DT,
-				round(drand48() * MAX_BACKOFF),
+				1,
 				0,
 				event.src_host,
 				dest_host,
