@@ -207,7 +207,8 @@ void process_arrival(
 		/* Add packet transmission time to source host queue */
 		queue_enqueue(
 			network->hosts[event.src_host],
-			(void *)service_time
+			(void *)service_time,
+			*current_time
 		);
 
 		/* If channel is busy, start backoff counter */
@@ -243,7 +244,8 @@ void process_arrival(
 		 */
 		queue_enqueue(
 			network->hosts[event.src_host],
-			(void *)service_time
+			(void *)service_time,
+			*current_time
 		);
 	}
 }
@@ -260,9 +262,14 @@ void process_departure(
 	*current_time = event.time;
 	/* Set channel to idle */
 	network->is_busy = false;
+	double arrival_time;
 
 	double *service_time;
-	queue_dequeue(network->hosts[event.src_host], (void **)&service_time);
+	queue_dequeue(
+		network->hosts[event.src_host],
+		(void **)&service_time,
+		&arrival_time
+	);
 	*total_bytes_sent +=
 		(*service_time - SIFS) * WLAN_CAP / 8000 - ACK_SIZE;
 
@@ -283,6 +290,12 @@ void process_departure(
 				SENSE
 			);
 		gel_insert(gel, new);
+		queue_get(
+			network->hosts[event.src_host],
+			(void **)&service_time,
+			&arrival_time
+		);
+		*total_network_delay += (event.time - arrival_time);
 	}
 }
 
@@ -324,9 +337,11 @@ void process_sense(
 		if (backoff == 0) {
 			/* Get transmission time of the pkt */
 			double *service_time;
+			double arrival_time;
 			queue_get(
 				network->hosts[event.src_host],
-				(void **)&service_time
+				(void **)&service_time,
+				&arrival_time
 			);
 			/* Set channel to busy */
 			network->is_busy = true;
@@ -378,7 +393,7 @@ void process_sense(
 double neg_exp_gen(double rate)
 {
 	double u = drand48();
-	return ((-1 / rate) * log(1 - u));
+	return ((-1 / rate) * log(u));
 }
 
 int generate_data_frame_length(void)

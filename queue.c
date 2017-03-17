@@ -4,6 +4,7 @@
 
 typedef struct node {
 	void *data;
+	double arrival_time;
 	struct node *next;
 } node_t;
 
@@ -23,7 +24,7 @@ queue_t *queue_create(void)
 	return q;
 }
 
-int queue_enqueue(queue_t *queue, void *data)
+int queue_enqueue(queue_t *queue, void *data, double arrival_time)
 {
 	/* Check for NULL arguments */
 	if (!queue || !data)
@@ -31,6 +32,7 @@ int queue_enqueue(queue_t *queue, void *data)
 
 	node_t *new = (node_t *)malloc(sizeof(node_t));
 	new->data = data;
+	new->arrival_time = arrival_time;
 	new->next = NULL;
 
 	/* If queue is empty */
@@ -47,7 +49,7 @@ int queue_enqueue(queue_t *queue, void *data)
 	return 0;
 }
 
-int queue_dequeue(queue_t *queue, void **data)
+int queue_dequeue(queue_t *queue, void **data, double *arrival_time)
 {
 	/* Check for NULL arguments */
 	if (!queue || !data)
@@ -60,6 +62,7 @@ int queue_dequeue(queue_t *queue, void **data)
 	/* If only one element in queue */
 	if (queue->front == queue->rear) {
 		*data = queue->front->data;
+		*arrival_time = queue->front->arrival_time;
 		queue->front = NULL;
 		queue->rear = NULL;
 		queue->length--;
@@ -67,6 +70,7 @@ int queue_dequeue(queue_t *queue, void **data)
 	}
 
 	*data = queue->front->data;
+	*arrival_time = queue->front->arrival_time;
 	node_t *dequeued = queue->front;
 	queue->front = queue->front->next;
 	free(dequeued);
@@ -74,7 +78,7 @@ int queue_dequeue(queue_t *queue, void **data)
 	return 0;
 }
 
-int queue_get(queue_t *queue, void **data)
+int queue_get(queue_t *queue, void **data, double *arrival_time)
 {
 	/* Check for NULL arguments */
 	if (!queue || !data)
@@ -85,6 +89,7 @@ int queue_get(queue_t *queue, void **data)
 		return -1;
 
 	*data = queue->front->data;
+	*arrival_time = queue->front->arrival_time;
 
 	return 0;
 }
