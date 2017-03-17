@@ -15,7 +15,7 @@
 /* Number of hosts */
 #define HOST_COUNT		10
 /* Maximum backoff value */
-#define MAX_BACKOFF		100
+#define MAX_BACKOFF		10
 /* Acknowledgement frame size in bytes */
 #define ACK_SIZE		64
 /* Wireless channel capacity in bps */
@@ -27,7 +27,7 @@
 /* Time between each channel sense in ms */
 #define DT			0.01
 /* Number of events to simulate */
-#define MAX_EVENT		1000000
+#define MAX_EVENT		5000
 
 typedef struct network_t {
 	queue_t **hosts;
@@ -56,6 +56,8 @@ void process_sense(
 double neg_exp_gen(double rate);
 int generate_data_frame_length(void);
 int generate_dest_host(int src_host);
+void update_total_delay_sense(queue_t *queue, double *total_network_delay);
+void update_total_delay_transmit(queue_t *queue, double *total_network_delay, double service_time);
 
 int main(void)
 {
@@ -97,6 +99,9 @@ int main(void)
 		event_t *current = malloc(sizeof(event_t));
 		gel_get(gel, current);
 
+		if (current->type == SENSE)
+			i--;
+
 		switch (current->type) {
 		case ARRIVAL:
 			process_arrival(
@@ -129,7 +134,8 @@ int main(void)
 	}
 
 	double throughput = total_bytes_sent / current_time * 1000;
-	double avg_network_delay = total_network_delay / (throughput / 1000);
+	double avg_network_delay =
+		total_network_delay / total_bytes_sent;
 
 	/* Print results */
 	printf("Discrete-event simulation of WLAN:\n");
@@ -218,7 +224,7 @@ void process_arrival(
 				gel_create_event(
 					event.time + DT,
 					round(drand48() * MAX_BACKOFF),
-					0,
+					DT,
 					event.src_host,
 					dest_host,
 					SENSE
@@ -230,7 +236,7 @@ void process_arrival(
 				gel_create_event(
 					event.time + DT,
 					1,
-					0,
+					DT,
 					event.src_host,
 					dest_host,
 					SENSE
@@ -246,6 +252,12 @@ void process_arrival(
 			network->hosts[event.src_host],
 			(void *)service_time,
 			*current_time
+		);
+		double arrival_time;
+		queue_get(
+			network->hosts[event.src_host],
+			(void **)&service_time,
+			&arrival_time
 		);
 	}
 }
@@ -270,6 +282,7 @@ void process_departure(
 		(void **)&service_time,
 		&arrival_time
 	);
+
 	*total_bytes_sent +=
 		(*service_time - SIFS) * WLAN_CAP / 8000 - ACK_SIZE;
 
@@ -278,13 +291,14 @@ void process_departure(
 		/* Pick a random host to send to */
 		int dest_host = generate_dest_host(event.src_host);
 		/* Update total network delay */
-		*total_network_delay += DT;
+		update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
+		//*total_network_delay += DT;
 		/* Create new event for sensing backoff */
 		event_t *new =
 			gel_create_event(
 				*current_time + DT,
 				round(drand48() * MAX_BACKOFF),
-				0,
+				DT,
 				event.src_host,
 				dest_host,
 				SENSE
@@ -295,7 +309,6 @@ void process_departure(
 			(void **)&service_time,
 			&arrival_time
 		);
-		*total_network_delay += (event.time - arrival_time);
 	}
 }
 
@@ -329,7 +342,8 @@ void process_sense(
 					event.type
 				);
 			gel_insert(gel, new);
-			*total_network_delay += DT;
+			//*total_network_delay += DT;
+			update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
 			return;
 		}
 
@@ -357,21 +371,23 @@ void process_sense(
 				);
 			gel_insert(gel, new);
 			/* Add transmission time to total delay */
-			*total_network_delay += *service_time;
+			//*total_network_delay += *service_time;
+			update_total_delay_transmit(network->hosts[event.src_host], total_network_delay, *service_time);
 		} else { /* Else backoff counter is greater than 0 */
 			/* Create sense event with new backoff counter value */
 			event_t *new =
 				gel_create_event(
 					*current_time + DT,
 					backoff,
-					0,
+					DT,
 					event.src_host,
 					event.dest_host,
 					SENSE
 				);
 			gel_insert(gel, new);
 			/* Update total delay */
-			*total_network_delay += DT;
+			//*total_network_delay += DT;
+			update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
 		}
 	} else { /* If channel is sensed busy */
 		/* Freeze backoff counter and create new sense event */
@@ -379,14 +395,15 @@ void process_sense(
 			gel_create_event(
 				*current_time + DT,
 				event.backoff,
-				0,
+				DT,
 				event.src_host,
 				event.dest_host,
 				SENSE
 			);
 		gel_insert(gel, new);
 		/* Update total delay */
-		*total_network_delay += DT;
+		//*total_network_delay += DT;
+		update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
 	}
 }
 
@@ -426,4 +443,18 @@ int generate_dest_host(int src_host)
 
 		dest_host = rand() % (HOST_COUNT - 1) + 1;
 	} while (1);
+}
+
+void update_total_delay_sense(queue_t *queue, double *total_network_delay)
+{
+	for (int i = 0; i < queue_length(queue); i++) {
+		*total_network_delay += DT;
+	}
+}
+
+void update_total_delay_transmit(queue_t *queue, double *total_network_delay, double service_time)
+{
+	for (int i = 0; i < queue_length(queue); i++) {
+		*total_network_delay += service_time;
+	}
 }
