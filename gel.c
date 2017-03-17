@@ -57,6 +57,9 @@ int gel_insert(gel_t *gel, event_t *new_event)
 					gel->length++;
 					return 0;
 				}
+			} else if (new->event->time == current->event->time) {
+				printf("same\n");
+				exit(0);
 			} else {
 				if (current->prev) {
 					new->prev = current->prev;

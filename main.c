@@ -13,9 +13,9 @@
 /* Maximum data frame length in bytes */
 #define MAX_DATA_LENGTH		1544.0
 /* Number of hosts */
-#define HOST_COUNT		10
+#define HOST_COUNT		20
 /* Maximum backoff value */
-#define MAX_BACKOFF		10
+#define MAX_BACKOFF		1000
 /* Acknowledgement frame size in bytes */
 #define ACK_SIZE		64
 /* Wireless channel capacity in bps */
@@ -27,7 +27,7 @@
 /* Time between each channel sense in ms */
 #define DT			0.01
 /* Number of events to simulate */
-#define MAX_EVENT		5000
+#define MAX_EVENT		1000
 
 typedef struct network_t {
 	queue_t **hosts;
@@ -56,8 +56,6 @@ void process_sense(
 double neg_exp_gen(double rate);
 int generate_data_frame_length(void);
 int generate_dest_host(int src_host);
-void update_total_delay_sense(queue_t *queue, double *total_network_delay);
-void update_total_delay_transmit(queue_t *queue, double *total_network_delay, double service_time);
 
 int main(void)
 {
@@ -99,7 +97,7 @@ int main(void)
 		event_t *current = malloc(sizeof(event_t));
 		gel_get(gel, current);
 
-		if (current->type == SENSE)
+		if (current->type != DEPARTURE)
 			i--;
 
 		switch (current->type) {
@@ -158,7 +156,6 @@ int main(void)
 	printf("Throughput: %lf kBps\n", throughput / 1000);
 	printf("Average network delay: %lf ms\n", avg_network_delay);
 
-
 	/* Clean up */
 	gel_destroy(gel);
 
@@ -213,8 +210,7 @@ void process_arrival(
 		/* Add packet transmission time to source host queue */
 		queue_enqueue(
 			network->hosts[event.src_host],
-			(void *)service_time,
-			*current_time
+			(void *)service_time
 		);
 
 		/* If channel is busy, start backoff counter */
@@ -250,14 +246,7 @@ void process_arrival(
 		 */
 		queue_enqueue(
 			network->hosts[event.src_host],
-			(void *)service_time,
-			*current_time
-		);
-		double arrival_time;
-		queue_get(
-			network->hosts[event.src_host],
-			(void **)&service_time,
-			&arrival_time
+			(void *)service_time
 		);
 	}
 }
@@ -274,13 +263,11 @@ void process_departure(
 	*current_time = event.time;
 	/* Set channel to idle */
 	network->is_busy = false;
-	double arrival_time;
 
 	double *service_time;
 	queue_dequeue(
 		network->hosts[event.src_host],
-		(void **)&service_time,
-		&arrival_time
+		(void **)&service_time
 	);
 
 	*total_bytes_sent +=
@@ -291,8 +278,9 @@ void process_departure(
 		/* Pick a random host to send to */
 		int dest_host = generate_dest_host(event.src_host);
 		/* Update total network delay */
-		update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
-		//*total_network_delay += DT;
+		*total_network_delay +=
+			(DT *
+			queue_length(network->hosts[event.src_host]));
 		/* Create new event for sensing backoff */
 		event_t *new =
 			gel_create_event(
@@ -304,11 +292,6 @@ void process_departure(
 				SENSE
 			);
 		gel_insert(gel, new);
-		queue_get(
-			network->hosts[event.src_host],
-			(void **)&service_time,
-			&arrival_time
-		);
 	}
 }
 
@@ -343,20 +326,21 @@ void process_sense(
 				);
 			gel_insert(gel, new);
 			//*total_network_delay += DT;
-			update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
+			*total_network_delay +=
+				(DT *
+				queue_length(network->hosts[event.src_host]));
 			return;
 		}
 
 		/* If backoff counter reaches 0, transmit */
-		if (backoff == 0) {
+		if (backoff == 0 || backoff == -1) {
 			/* Get transmission time of the pkt */
 			double *service_time;
-			double arrival_time;
 			queue_get(
 				network->hosts[event.src_host],
-				(void **)&service_time,
-				&arrival_time
+				(void **)&service_time
 			);
+
 			/* Set channel to busy */
 			network->is_busy = true;
 			/* Create new DEPARTURE event */
@@ -371,8 +355,9 @@ void process_sense(
 				);
 			gel_insert(gel, new);
 			/* Add transmission time to total delay */
-			//*total_network_delay += *service_time;
-			update_total_delay_transmit(network->hosts[event.src_host], total_network_delay, *service_time);
+			*total_network_delay +=
+				(*service_time
+				* queue_length(network->hosts[event.src_host]));
 		} else { /* Else backoff counter is greater than 0 */
 			/* Create sense event with new backoff counter value */
 			event_t *new =
@@ -387,7 +372,9 @@ void process_sense(
 			gel_insert(gel, new);
 			/* Update total delay */
 			//*total_network_delay += DT;
-			update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
+			*total_network_delay +=
+				(DT
+				* queue_length(network->hosts[event.src_host]));
 		}
 	} else { /* If channel is sensed busy */
 		/* Freeze backoff counter and create new sense event */
@@ -403,14 +390,16 @@ void process_sense(
 		gel_insert(gel, new);
 		/* Update total delay */
 		//*total_network_delay += DT;
-		update_total_delay_sense(network->hosts[event.src_host], total_network_delay);
+		*total_network_delay +=
+			(DT *
+			queue_length(network->hosts[event.src_host]));
 	}
 }
 
 double neg_exp_gen(double rate)
 {
 	double u = drand48();
-	return ((-1 / rate) * log(u));
+	return ((-1 / rate) * log(1 - u));
 }
 
 int generate_data_frame_length(void)
@@ -443,18 +432,4 @@ int generate_dest_host(int src_host)
 
 		dest_host = rand() % (HOST_COUNT - 1) + 1;
 	} while (1);
-}
-
-void update_total_delay_sense(queue_t *queue, double *total_network_delay)
-{
-	for (int i = 0; i < queue_length(queue); i++) {
-		*total_network_delay += DT;
-	}
-}
-
-void update_total_delay_transmit(queue_t *queue, double *total_network_delay, double service_time)
-{
-	for (int i = 0; i < queue_length(queue); i++) {
-		*total_network_delay += service_time;
-	}
 }
