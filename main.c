@@ -276,7 +276,7 @@ void process_departure(
 		event_t *new =
 			gel_create_event(
 				*current_time + DT,
-				1,
+				round(drand48() * MAX_BACKOFF),
 				0,
 				event.src_host,
 				dest_host,
